@@ -1,4 +1,3 @@
-import argparse
 import json
 import os
 import shutil
@@ -11,35 +10,15 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 ROOT_DIR = SCRIPT_DIR.parent
 DEFAULT_SPLITS_DIR = ROOT_DIR / "splits"
 DEFAULT_OUTPUT_DIR = ROOT_DIR / "yolo_dataset"
+EXPORT_SPLITS_DIR = DEFAULT_SPLITS_DIR
+EXPORT_OUTPUT_DIR = DEFAULT_OUTPUT_DIR
+EXPORT_SPLIT_NAMES = ["split1", "split2", "split3"]
+MAX_IMAGES_PER_SUBSET = None
+COPY_MODE = "auto"
 
 CLASS_NAMES = ["car", "pedestrian", "truck", "rider"]
 CLASS_TO_ID = {class_name: index for index, class_name in enumerate(CLASS_NAMES)}
 SUBSET_NAMES = ["train", "val", "test"]
-
-
-def parse_args():
-    parser = argparse.ArgumentParser(description="Export persisted dataset splits to YOLO detection format.")
-    parser.add_argument("--splits-dir", type=Path, default=DEFAULT_SPLITS_DIR, help="Directory produced by 2-data_split.py")
-    parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR, help="Target directory for YOLO datasets")
-    parser.add_argument(
-        "--split-names",
-        nargs="+",
-        default=["split1", "split2", "split3"],
-        help="Names of split directories to export",
-    )
-    parser.add_argument(
-        "--max-images-per-subset",
-        type=int,
-        default=None,
-        help="Limit the number of exported images per subset for smoke tests.",
-    )
-    parser.add_argument(
-        "--copy-mode",
-        choices=["auto", "copy", "hardlink"],
-        default="auto",
-        help="How images should be materialized in the YOLO dataset.",
-    )
-    return parser.parse_args()
 
 
 def load_subset_csv(split_dir, subset_name):
@@ -319,22 +298,24 @@ def export_split(split_name, splits_dir, output_dir, copy_mode, asset_cache, max
 
 
 def main():
-    args = parse_args()
-    if not args.splits_dir.exists():
-        raise FileNotFoundError(f"Brak katalogu ze splitami: {args.splits_dir}")
+    if COPY_MODE not in {"auto", "copy", "hardlink"}:
+        raise ValueError(f"Nieobsługiwany COPY_MODE: {COPY_MODE}")
 
-    args.output_dir.mkdir(parents=True, exist_ok=True)
+    if not EXPORT_SPLITS_DIR.exists():
+        raise FileNotFoundError(f"Brak katalogu ze splitami: {EXPORT_SPLITS_DIR}")
+
+    EXPORT_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     asset_cache = {}
-    for split_name in args.split_names:
+    for split_name in EXPORT_SPLIT_NAMES:
         export_split(
             split_name,
-            args.splits_dir,
-            args.output_dir,
-            args.copy_mode,
+            EXPORT_SPLITS_DIR,
+            EXPORT_OUTPUT_DIR,
+            COPY_MODE,
             asset_cache,
-            max_images_per_subset=args.max_images_per_subset,
+            max_images_per_subset=MAX_IMAGES_PER_SUBSET,
         )
-    write_shared_assets_index(args.output_dir, asset_cache)
+    write_shared_assets_index(EXPORT_OUTPUT_DIR, asset_cache)
 
 
 if __name__ == "__main__":
