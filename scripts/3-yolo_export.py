@@ -8,11 +8,9 @@ import pandas as pd
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 ROOT_DIR = SCRIPT_DIR.parent
-DEFAULT_SPLITS_DIR = ROOT_DIR / "splits"
-DEFAULT_OUTPUT_DIR = ROOT_DIR / "yolo_dataset"
-EXPORT_SPLITS_DIR = DEFAULT_SPLITS_DIR
-EXPORT_OUTPUT_DIR = DEFAULT_OUTPUT_DIR
-EXPORT_SPLIT_NAMES = ["split1", "split2", "split3"]
+SPLITS_DIR = ROOT_DIR / "splits"
+OUTPUT_DIR = ROOT_DIR / "yolo_dataset"
+SPLIT_NAMES = ["split1", "split2", "split3"]
 MAX_IMAGES_PER_SUBSET = None
 COPY_MODE = "auto"
 
@@ -21,22 +19,22 @@ CLASS_TO_ID = {class_name: index for index, class_name in enumerate(CLASS_NAMES)
 SUBSET_NAMES = ["train", "val", "test"]
 
 
-def load_subset_csv(split_dir, subset_name):
+def load_subset_annotations(split_dir, subset_name):
     subset_csv_path = split_dir / f"{subset_name}.csv"
     if not subset_csv_path.exists():
         raise FileNotFoundError(f"Brak pliku wejściowego: {subset_csv_path}")
 
-    df = pd.read_csv(subset_csv_path, low_memory=False)
-    df["dataset_source"] = df["dataset_source"].astype(str)
-    df["video_id"] = df["video_id"].astype(str)
-    df["image_path"] = df["image_path"].astype(str)
-    df["category"] = df["category"].astype(str).str.lower().str.strip()
-    df = df[df["image_path"] != ""].copy()
-    df = df[df["image_path"] != "nan"].copy()
-    return df[df["category"].isin(CLASS_TO_ID)].copy()
+    annotations_df = pd.read_csv(subset_csv_path, low_memory=False)
+    annotations_df["dataset_source"] = annotations_df["dataset_source"].astype(str)
+    annotations_df["video_id"] = annotations_df["video_id"].astype(str)
+    annotations_df["image_path"] = annotations_df["image_path"].astype(str)
+    annotations_df["category"] = annotations_df["category"].astype(str).str.lower().str.strip()
+    annotations_df = annotations_df[annotations_df["image_path"] != ""].copy()
+    annotations_df = annotations_df[annotations_df["image_path"] != "nan"].copy()
+    return annotations_df[annotations_df["category"].isin(CLASS_TO_ID)].copy()
 
 
-def materialize_image(source_path, destination_path, copy_mode):
+def copy_or_link_image(source_path, destination_path, copy_mode):
     destination_path.parent.mkdir(parents=True, exist_ok=True)
     if destination_path.exists():
         return
@@ -52,7 +50,7 @@ def materialize_image(source_path, destination_path, copy_mode):
     shutil.copy2(source_path, destination_path)
 
 
-def build_shared_relative_path(image_row, source_image_path):
+def build_shared_asset_path(image_row, source_image_path):
     return Path(image_row.dataset_source.lower()) / str(image_row.video_id) / source_image_path.name
 
 
@@ -80,14 +78,14 @@ def convert_bbox_to_yolo(row, width, height):
     return x_center, y_center, box_width, box_height
 
 
-def materialize_shared_asset(image_row, annotation_group, shared_images_dir, shared_labels_dir, copy_mode, asset_cache):
+def export_shared_asset(image_row, annotation_group, shared_images_dir, shared_labels_dir, copy_mode, asset_cache):
     cache_key = str(image_row.image_path)
     cached_record = asset_cache.get(cache_key)
     if cached_record is not None:
         return cached_record
 
     source_image_path = ROOT_DIR / "dataset" / image_row.image_path
-    shared_relative_path = build_shared_relative_path(image_row, source_image_path)
+    shared_relative_path = build_shared_asset_path(image_row, source_image_path)
     target_image_path = shared_images_dir / shared_relative_path
     target_label_path = shared_labels_dir / shared_relative_path.with_suffix(".txt")
 
@@ -157,7 +155,7 @@ def materialize_shared_asset(image_row, annotation_group, shared_images_dir, sha
         asset_cache[cache_key] = record
         return record
 
-    materialize_image(source_image_path, target_image_path, copy_mode)
+    copy_or_link_image(source_image_path, target_image_path, copy_mode)
     target_label_path.parent.mkdir(parents=True, exist_ok=True)
     target_label_path.write_text("\n".join(yolo_lines) + "\n", encoding="utf-8")
 
@@ -182,12 +180,12 @@ def export_subset(split_name, subset_name, subset_df, output_dir, copy_mode, ass
     shared_images_dir = output_dir / "images"
     shared_labels_dir = output_dir / "labels"
 
-    unique_images_df = subset_df[["dataset_source", "video_id", "frame_index", "image_path"]].drop_duplicates()
-    unique_images_df = unique_images_df.sort_values(by=["dataset_source", "video_id", "frame_index"])
+    unique_images = subset_df[["dataset_source", "video_id", "frame_index", "image_path"]].drop_duplicates()
+    unique_images = unique_images.sort_values(by=["dataset_source", "video_id", "frame_index"])
     if max_images_per_subset is not None:
-        unique_images_df = unique_images_df.head(max_images_per_subset)
+        unique_images = unique_images.head(max_images_per_subset)
 
-    grouped_annotations = {image_path: group.copy() for image_path, group in subset_df.groupby("image_path", sort=False)}
+    annotations_by_image = {image_path: group.copy() for image_path, group in subset_df.groupby("image_path", sort=False)}
 
     manifest_lines = []
     exported_index_rows = []
@@ -195,9 +193,9 @@ def export_subset(split_name, subset_name, subset_df, output_dir, copy_mode, ass
     exported_box_count = 0
     skipped_images = 0
 
-    for image_row in unique_images_df.itertuples(index=False):
-        annotation_group = grouped_annotations.get(image_row.image_path)
-        asset_record = materialize_shared_asset(
+    for image_row in unique_images.itertuples(index=False):
+        annotation_group = annotations_by_image.get(image_row.image_path)
+        asset_record = export_shared_asset(
             image_row,
             annotation_group,
             shared_images_dir,
@@ -241,7 +239,7 @@ def export_subset(split_name, subset_name, subset_df, output_dir, copy_mode, ass
     }
 
 
-def write_dataset_yaml(split_output_dir, split_name):
+def save_dataset_yaml(split_output_dir, split_name):
     yaml_lines = [
         f"train: ../{split_name}_train.txt",
         f"val: ../{split_name}_val.txt",
@@ -254,7 +252,7 @@ def write_dataset_yaml(split_output_dir, split_name):
     (split_output_dir / "data.yaml").write_text("\n".join(yaml_lines) + "\n", encoding="utf-8")
 
 
-def write_shared_assets_index(output_dir, asset_cache):
+def save_shared_assets_index(output_dir, asset_cache):
     shared_assets = [record for record in asset_cache.values() if record["status"] == "exported"]
     if not shared_assets:
         return
@@ -278,7 +276,7 @@ def export_split(split_name, splits_dir, output_dir, copy_mode, asset_cache, max
 
     export_summary = {}
     for subset_name in SUBSET_NAMES:
-        subset_df = load_subset_csv(split_dir, subset_name)
+        subset_df = load_subset_annotations(split_dir, subset_name)
         export_summary[subset_name] = export_subset(
             split_name,
             subset_name,
@@ -289,7 +287,7 @@ def export_split(split_name, splits_dir, output_dir, copy_mode, asset_cache, max
             max_images_per_subset=max_images_per_subset,
         )
 
-    write_dataset_yaml(split_output_dir, split_name)
+    save_dataset_yaml(split_output_dir, split_name)
     (split_output_dir / "export_summary.json").write_text(
         json.dumps(export_summary, indent=2),
         encoding="utf-8",
@@ -301,21 +299,22 @@ def main():
     if COPY_MODE not in {"auto", "copy", "hardlink"}:
         raise ValueError(f"Nieobsługiwany COPY_MODE: {COPY_MODE}")
 
-    if not EXPORT_SPLITS_DIR.exists():
-        raise FileNotFoundError(f"Brak katalogu ze splitami: {EXPORT_SPLITS_DIR}")
+    if not SPLITS_DIR.exists():
+        raise FileNotFoundError(f"Brak katalogu ze splitami: {SPLITS_DIR}")
 
-    EXPORT_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     asset_cache = {}
-    for split_name in EXPORT_SPLIT_NAMES:
+    # Jeden wspólny katalog assets ogranicza duplikowanie obrazów między wariantami splitów.
+    for split_name in SPLIT_NAMES:
         export_split(
             split_name,
-            EXPORT_SPLITS_DIR,
-            EXPORT_OUTPUT_DIR,
+            SPLITS_DIR,
+            OUTPUT_DIR,
             COPY_MODE,
             asset_cache,
             max_images_per_subset=MAX_IMAGES_PER_SUBSET,
         )
-    write_shared_assets_index(EXPORT_OUTPUT_DIR, asset_cache)
+    save_shared_assets_index(OUTPUT_DIR, asset_cache)
 
 
 if __name__ == "__main__":

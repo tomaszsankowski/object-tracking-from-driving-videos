@@ -4,6 +4,7 @@ Generates 3 pairs of images (ground truth + predictions) from validation sets.
 """
 
 import random
+import traceback
 from pathlib import Path
 from typing import Dict, List, Tuple
 
@@ -25,24 +26,24 @@ COLORS = {
 }
 
 
-def load_val_data(split_name: str, root_dir: Path) -> pd.DataFrame:
+def load_validation_annotations(split_name: str, root_dir: Path) -> pd.DataFrame:
     """Load validation CSV for a split."""
     val_csv = root_dir / "splits" / split_name / "val.csv"
     return pd.read_csv(val_csv)
 
 
-def get_unique_images(df: pd.DataFrame) -> List[str]:
+def list_image_paths(df: pd.DataFrame) -> List[str]:
     """Get unique image paths from dataframe."""
     return df["image_path"].unique().tolist()
 
 
-def get_image_annotations(df: pd.DataFrame, image_path: str) -> List[Dict]:
+def get_annotations_for_image(df: pd.DataFrame, image_path: str) -> List[Dict]:
     """Get all annotations for a specific image."""
     annotations = df[df["image_path"] == image_path].to_dict("records")
     return annotations
 
 
-def draw_bboxes(
+def draw_annotations(
     image: np.ndarray,
     annotations: List[Dict],
     color: Tuple[int, int, int],
@@ -93,7 +94,7 @@ def draw_bboxes(
     return image_copy
 
 
-def draw_yolo_predictions(
+def draw_predictions(
     image: np.ndarray,
     results,
     color: Tuple[int, int, int],
@@ -149,20 +150,17 @@ def draw_yolo_predictions(
     return image_copy
 
 
-def create_comparison_pair(
+def build_comparison_images(
     original_image: np.ndarray,
     gt_annotations: List[Dict],
     yolo_results,
     conf_threshold: float = 0.5
 ) -> Tuple[np.ndarray, np.ndarray]:
     """Create ground truth and predictions images separately."""
-    
-    # Draw ground truth
-    gt_image = draw_bboxes(original_image, gt_annotations, COLORS["ground_truth"], "GT")
-    
-    # Draw predictions
-    pred_image = draw_yolo_predictions(original_image, yolo_results, COLORS["prediction"], conf_threshold)
-    
+
+    gt_image = draw_annotations(original_image, gt_annotations, COLORS["ground_truth"], "GT")
+    pred_image = draw_predictions(original_image, yolo_results, COLORS["prediction"], conf_threshold)
+
     return gt_image, pred_image
 
 
@@ -176,106 +174,106 @@ def process_split(
     seed: int = 42
 ) -> Tuple[str, List[Path], str]:
     """Process a single split and return comparison image paths."""
-    
+
     # Set seed for reproducibility
     random.seed(seed)
     np.random.seed(seed)
-    
+
     print(f"\n{'='*60}")
     print(f"Processing {split_name}")
     print(f"{'='*60}")
-    
+
     # Load validation data
     print(f"Loading validation data for {split_name}...")
-    val_df = load_val_data(split_name, root_dir)
-    
+    val_df = load_validation_annotations(split_name, root_dir)
+
     # Get unique images
-    unique_images = get_unique_images(val_df)
-    print(f"Total unique validation images: {len(unique_images)}")
-    
+    image_paths = list_image_paths(val_df)
+    print(f"Total unique validation images: {len(image_paths)}")
+
     # Select random image
-    selected_image = random.choice(unique_images)
+    selected_image = random.choice(image_paths)
     print(f"Selected image: {selected_image}")
-    
+
     # Load image
     image_path = dataset_dir / selected_image
     if not image_path.exists():
         print(f"ERROR: Image not found at {image_path}")
         return split_name, [], selected_image
-    
+
     image = cv2.imread(str(image_path))
     if image is None:
         print(f"ERROR: Could not load image from {image_path}")
         return split_name, [], selected_image
-    
+
     print(f"Image shape: {image.shape}")
-    
+
     # Get ground truth annotations
-    gt_annotations = get_image_annotations(val_df, selected_image)
+    gt_annotations = get_annotations_for_image(val_df, selected_image)
     print(f"Found {len(gt_annotations)} ground truth annotations")
-    
+
     # Load model and run inference
     print(f"Loading model from {model_path}...")
     model = YOLO(str(model_path))
-    
+
     print("Running inference...")
     results = model.predict(str(image_path), conf=conf_threshold, verbose=False)
-    
+
     if results and len(results) > 0:
         result = results[0]
         print(f"Found {len(result.boxes) if result.boxes else 0} predictions")
     else:
         print("No predictions returned")
         result = None
-    
+
     # Create output images
     output_dir.mkdir(parents=True, exist_ok=True)
     output_paths = []
-    
+
     # Save as two separate images for all splits
-    gt_image, pred_image = create_comparison_pair(image, gt_annotations, result, conf_threshold)
-    
+    gt_image, pred_image = build_comparison_images(image, gt_annotations, result, conf_threshold)
+
     gt_path = output_dir / f"{split_name}_labels.png"
     pred_path = output_dir / f"{split_name}_pred.png"
-    
+
     cv2.imwrite(str(gt_path), gt_image)
     cv2.imwrite(str(pred_path), pred_image)
-    
+
     print(f"Saved labels to {gt_path}")
     print(f"Saved predictions to {pred_path}")
     output_paths = [gt_path, pred_path]
-    
+
     return split_name, output_paths, selected_image
 
 
 def main():
     dataset_dir = ROOT_DIR / "dataset"
-    
+
     splits_config = {
         "split1": ROOT_DIR / "runs" / "yolo" / "model1_split1_overfit" / "weights" / "best.pt",
         "split2": ROOT_DIR / "runs" / "yolo" / "model2_split2-4" / "weights" / "best.pt",
         "split3": ROOT_DIR / "runs" / "yolo" / "model3_split3" / "weights" / "best.pt",
     }
-    
+
     # Verify all models exist
     for split_name, model_path in splits_config.items():
         if not model_path.exists():
             print(f"ERROR: Model not found at {model_path}")
             return
-    
+
     print("="*60)
     print("Model Predictions Comparison")
     print("="*60)
     print(f"Output directory: {OUTPUT_DIR}")
     print(f"Confidence threshold: {CONF_THRESHOLD}")
     print(f"Seed: {RANDOM_SEED}")
-    
-    results_info = []
-    
+
+    saved_comparisons = []
+
     # Process each split
     for idx, (split_name, model_path) in enumerate(splits_config.items()):
         try:
-            split_result, output_paths, selected_image = process_split(
+            processed_split, output_paths, selected_image = process_split(
                 split_name=split_name,
                 model_path=model_path,
                 root_dir=ROOT_DIR,
@@ -284,32 +282,31 @@ def main():
                 conf_threshold=CONF_THRESHOLD,
                 seed=RANDOM_SEED + idx  # Different seed per split for random selection
             )
-            
+
             if output_paths:
-                results_info.append({
-                    "split": split_result,
+                saved_comparisons.append({
+                    "split": processed_split,
                     "outputs": [str(p) for p in output_paths],
                     "image": selected_image
                 })
-                print(f"✓ {split_result} completed successfully")
+                print(f"✓ {processed_split} completed successfully")
             else:
-                print(f"✗ {split_result} failed")
-        
+                print(f"✗ {processed_split} failed")
+
         except Exception as e:
             print(f"✗ Error processing {split_name}: {e}")
-            import traceback
             traceback.print_exc()
-    
+
     # Print summary
     print(f"\n{'='*60}")
     print("Summary")
     print(f"{'='*60}")
-    for info in results_info:
+    for info in saved_comparisons:
         print(f"\n{info['split']}:")
         for output in info['outputs']:
             print(f"  {output}")
         print(f"  Image: {info['image']}")
-    
+
     print(f"\nComparison images saved to: {OUTPUT_DIR}")
 
 
