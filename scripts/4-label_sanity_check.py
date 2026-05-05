@@ -50,7 +50,6 @@ def list_subset_images(manifest_path):
 
 
 def get_manifest_path(dataset_dir, subset_name):
-    # Eksport w zależności od wersji zapisywał manifest albo w katalogu splitu, albo obok niego.
     split_local_manifest = dataset_dir / f"{subset_name}.txt"
     if split_local_manifest.exists():
         return split_local_manifest
