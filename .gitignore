@@ -225,7 +225,7 @@ original_datasets
 dataset
 
 # Yolo dataset (also script-generated once original_datasets are processed)
-yolo_dataset
+yolo_dataset/*
 
 # Ignore trained models (they are too large to be stored in GitHub)
 *.pt
@@ -235,7 +235,5 @@ splits
 
 merged_dataset.csv
 docs/*
-yolo_dataset/*
 data/*
-runs/*
 plan.md
