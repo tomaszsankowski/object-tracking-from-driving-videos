@@ -3,7 +3,6 @@ Script to compare predictions from best models across splits with ground truth.
 Generates 3 pairs of images (ground truth + predictions) from validation sets.
 """
 
-import argparse
 import random
 from pathlib import Path
 from typing import Dict, List, Tuple
@@ -13,34 +12,17 @@ import numpy as np
 import pandas as pd
 from ultralytics import YOLO
 
+SCRIPT_DIR = Path(__file__).resolve().parent
+ROOT_DIR = SCRIPT_DIR.parent
+OUTPUT_DIR = ROOT_DIR / "reports" / "model_comparison"
+RANDOM_SEED = 42
+CONF_THRESHOLD = 0.5
+
 CLASS_NAMES = ["car", "pedestrian", "truck", "rider"]
 COLORS = {
     "ground_truth": (0, 255, 0),      # Green
     "prediction": (0, 0, 255),         # Red
 }
-
-
-def parse_args():
-    parser = argparse.ArgumentParser(description="Compare best models from splits with ground truth")
-    parser.add_argument(
-        "--output-dir",
-        type=Path,
-        default=Path("reports/model_comparison"),
-        help="Directory to save comparison images"
-    )
-    parser.add_argument(
-        "--seed",
-        type=int,
-        default=42,
-        help="Random seed for reproducibility"
-    )
-    parser.add_argument(
-        "--conf",
-        type=float,
-        default=0.5,
-        help="Confidence threshold for predictions"
-    )
-    return parser.parse_args()
 
 
 def load_val_data(split_name: str, root_dir: Path) -> pd.DataFrame:
@@ -267,16 +249,12 @@ def process_split(
 
 
 def main():
-    args = parse_args()
-    
-    script_dir = Path(__file__).resolve().parent
-    root_dir = script_dir.parent
-    dataset_dir = root_dir / "dataset"
+    dataset_dir = ROOT_DIR / "dataset"
     
     splits_config = {
-        "split1": root_dir / "runs" / "yolo" / "model1_split1_overfit" / "weights" / "best.pt",
-        "split2": root_dir / "runs" / "yolo" / "model2_split2-4" / "weights" / "best.pt",
-        "split3": root_dir / "runs" / "yolo" / "model3_split3" / "weights" / "best.pt",
+        "split1": ROOT_DIR / "runs" / "yolo" / "model1_split1_overfit" / "weights" / "best.pt",
+        "split2": ROOT_DIR / "runs" / "yolo" / "model2_split2-4" / "weights" / "best.pt",
+        "split3": ROOT_DIR / "runs" / "yolo" / "model3_split3" / "weights" / "best.pt",
     }
     
     # Verify all models exist
@@ -288,9 +266,9 @@ def main():
     print("="*60)
     print("Model Predictions Comparison")
     print("="*60)
-    print(f"Output directory: {args.output_dir}")
-    print(f"Confidence threshold: {args.conf}")
-    print(f"Seed: {args.seed}")
+    print(f"Output directory: {OUTPUT_DIR}")
+    print(f"Confidence threshold: {CONF_THRESHOLD}")
+    print(f"Seed: {RANDOM_SEED}")
     
     results_info = []
     
@@ -300,11 +278,11 @@ def main():
             split_result, output_paths, selected_image = process_split(
                 split_name=split_name,
                 model_path=model_path,
-                root_dir=root_dir,
+                root_dir=ROOT_DIR,
                 dataset_dir=dataset_dir,
-                output_dir=args.output_dir,
-                conf_threshold=args.conf,
-                seed=args.seed + idx  # Different seed per split for random selection
+                output_dir=OUTPUT_DIR,
+                conf_threshold=CONF_THRESHOLD,
+                seed=RANDOM_SEED + idx  # Different seed per split for random selection
             )
             
             if output_paths:
@@ -332,7 +310,7 @@ def main():
             print(f"  {output}")
         print(f"  Image: {info['image']}")
     
-    print(f"\nComparison images saved to: {args.output_dir}")
+    print(f"\nComparison images saved to: {OUTPUT_DIR}")
 
 
 if __name__ == "__main__":
