@@ -1,4 +1,3 @@
-import argparse
 import json
 import shutil
 from pathlib import Path
@@ -11,13 +10,8 @@ ROOT_DIR = SCRIPT_DIR.parent
 DEFAULT_RUNS_DIR = ROOT_DIR / "runs" / "yolo"
 DEFAULT_OUTPUT_DIR = ROOT_DIR / "reports" / "task3"
 SCORE_COLUMN = "metrics/mAP50-95(B)"
-
-
-def parse_args():
-    parser = argparse.ArgumentParser(description="Collect Task 3 training metrics and report assets from YOLO runs.")
-    parser.add_argument("--runs-dir", type=Path, default=DEFAULT_RUNS_DIR, help="Directory containing YOLO run folders")
-    parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR, help="Directory for aggregated report assets")
-    return parser.parse_args()
+RUNS_DIR = DEFAULT_RUNS_DIR
+OUTPUT_DIR = DEFAULT_OUTPUT_DIR
 
 
 def discover_runs(runs_dir):
@@ -99,16 +93,15 @@ def plot_comparison(summary_df, output_dir, metric_column, file_name, title):
 
 
 def main():
-    args = parse_args()
-    if not args.runs_dir.exists():
-        raise FileNotFoundError(f"Brak katalogu runów: {args.runs_dir}")
+    if not RUNS_DIR.exists():
+        raise FileNotFoundError(f"Brak katalogu runów: {RUNS_DIR}")
 
-    args.output_dir.mkdir(parents=True, exist_ok=True)
-    report_runs_dir = args.output_dir / "runs"
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    report_runs_dir = OUTPUT_DIR / "runs"
     report_runs_dir.mkdir(parents=True, exist_ok=True)
 
     records = []
-    for run_dir in discover_runs(args.runs_dir):
+    for run_dir in discover_runs(RUNS_DIR):
         record, _ = load_run_record(run_dir)
         if record is None:
             continue
@@ -119,13 +112,13 @@ def main():
         raise SystemExit("Nie znaleziono żadnych zakończonych runów z run_summary.json i results.csv.")
 
     summary_df = pd.DataFrame(records).sort_values(by=["elapsed_seconds", "run_name"], na_position="last")
-    summary_df.to_csv(args.output_dir / "task3_runs_summary.csv", index=False)
+    summary_df.to_csv(OUTPUT_DIR / "task3_runs_summary.csv", index=False)
 
-    plot_comparison(summary_df, args.output_dir, "metrics/mAP50(B)", "comparison_map50.png", "Task 3 comparison: mAP50")
-    plot_comparison(summary_df, args.output_dir, SCORE_COLUMN, "comparison_map50_95.png", "Task 3 comparison: mAP50-95")
-    plot_comparison(summary_df, args.output_dir, "elapsed_seconds", "comparison_runtime.png", "Task 3 comparison: runtime")
+    plot_comparison(summary_df, OUTPUT_DIR, "metrics/mAP50(B)", "comparison_map50.png", "Task 3 comparison: mAP50")
+    plot_comparison(summary_df, OUTPUT_DIR, SCORE_COLUMN, "comparison_map50_95.png", "Task 3 comparison: mAP50-95")
+    plot_comparison(summary_df, OUTPUT_DIR, "elapsed_seconds", "comparison_runtime.png", "Task 3 comparison: runtime")
 
-    print(f"Zebrano {len(summary_df)} runów do {args.output_dir}")
+    print(f"Zebrano {len(summary_df)} runów do {OUTPUT_DIR}")
 
 
 if __name__ == "__main__":

@@ -1,4 +1,3 @@
-import argparse
 import json
 import os
 from pathlib import Path
@@ -15,14 +14,9 @@ ROOT_DIR = Path(BASE_DIR).resolve().parent
 MERGED_DATASET_PATH = ROOT_DIR / "dataset/merged_dataset.csv"
 DEFAULT_SPLITS_DIR = ROOT_DIR / "splits"
 COMMON_CLASSES = ["car", "pedestrian", "truck", "rider"]
-
-
-def parse_args():
-    parser = argparse.ArgumentParser(description="Create reusable SPLIT1/SPLIT2/SPLIT3 artifacts for Task 3.")
-    parser.add_argument("--input-csv", type=Path, default=MERGED_DATASET_PATH, help="Path to merged_dataset.csv")
-    parser.add_argument("--output-dir", type=Path, default=DEFAULT_SPLITS_DIR, help="Directory for persisted split artifacts")
-    parser.add_argument("--random-state", type=int, default=42, help="Random seed used for all splits")
-    return parser.parse_args()
+INPUT_CSV_PATH = MERGED_DATASET_PATH
+SPLITS_OUTPUT_DIR = DEFAULT_SPLITS_DIR
+RANDOM_STATE = 42
 
 
 def load_dataset(path):
@@ -185,28 +179,26 @@ def save_split_artifacts(split_name, train_df, val_df, test_df, output_dir, inpu
 
 
 def main():
-    args = parse_args()
-
-    if not args.input_csv.exists():
-        print(f"Brak pliku: {args.input_csv}")
+    if not INPUT_CSV_PATH.exists():
+        print(f"Brak pliku: {INPUT_CSV_PATH}")
         raise SystemExit(1)
 
-    args.output_dir.mkdir(parents=True, exist_ok=True)
+    SPLITS_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-    df_base = load_dataset(args.input_csv)
+    df_base = load_dataset(INPUT_CSV_PATH)
 
     # SPLIT 1 (Zwykły podział losowy, bez stratyfikacji)
-    rand_tr_ids, rand_val_ids, rand_ts_ids = get_random_video_splits(df_base, random_state=args.random_state)
+    rand_tr_ids, rand_val_ids, rand_ts_ids = get_random_video_splits(df_base, random_state=RANDOM_STATE)
 
     split1_train = df_base[df_base["sequence_id"].isin(rand_tr_ids)].copy()
     split1_val = df_base[df_base["sequence_id"].isin(rand_val_ids)].copy()
     split1_test = df_base[df_base["sequence_id"].isin(rand_ts_ids)].copy()
 
     print_split_stats("SPLIT 1 (Original Data - No Stratification)", split1_train, split1_val, split1_test)
-    save_split_artifacts("split1", split1_train, split1_val, split1_test, args.output_dir, args.input_csv, args.random_state)
+    save_split_artifacts("split1", split1_train, split1_val, split1_test, SPLITS_OUTPUT_DIR, INPUT_CSV_PATH, RANDOM_STATE)
 
     # SPLIT 2 (Stratyfikacja klas Rarest-Class-First)
-    strat_tr_ids, strat_val_ids, strat_ts_ids = get_stratified_video_splits(df_base, random_state=args.random_state)
+    strat_tr_ids, strat_val_ids, strat_ts_ids = get_stratified_video_splits(df_base, random_state=RANDOM_STATE)
 
     split2_train = df_base[df_base["sequence_id"].isin(strat_tr_ids)].copy()
     split2_val = df_base[df_base["sequence_id"].isin(strat_val_ids)].copy()
@@ -214,14 +206,14 @@ def main():
 
     print_split_stats("SPLIT 2 (Properly Normalized/Stratified & Ready for Augmentation)", split2_train, split2_val,
                       split2_test)
-    save_split_artifacts("split2", split2_train, split2_val, split2_test, args.output_dir, args.input_csv, args.random_state)
+    save_split_artifacts("split2", split2_train, split2_val, split2_test, SPLITS_OUTPUT_DIR, INPUT_CSV_PATH, RANDOM_STATE)
 
     # SPLIT 3 (VAL is subset of TRAIN)
     split3_train = split2_train.copy()
     split3_test = split2_test.copy()
 
     split3_tr_ids = split3_train['sequence_id'].unique()
-    _, split3_val_ids = train_test_split(split3_tr_ids, test_size=0.2, random_state=args.random_state)
+    _, split3_val_ids = train_test_split(split3_tr_ids, test_size=0.2, random_state=RANDOM_STATE)
     split3_val = split3_train[split3_train['sequence_id'].isin(split3_val_ids)].copy()
 
     print_split_stats("SPLIT 3 (VAL is subset of TRAIN)", split3_train, split3_val, split3_test)
@@ -230,9 +222,9 @@ def main():
         split3_train,
         split3_val,
         split3_test,
-        args.output_dir,
-        args.input_csv,
-        args.random_state,
+        SPLITS_OUTPUT_DIR,
+        INPUT_CSV_PATH,
+        RANDOM_STATE,
         val_subset_of_train=True,
     )
 

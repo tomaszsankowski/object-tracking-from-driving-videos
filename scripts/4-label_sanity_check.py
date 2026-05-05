@@ -1,8 +1,10 @@
-import argparse
 import random
 from pathlib import Path
 
 import cv2
+
+SCRIPT_DIR = Path(__file__).resolve().parent
+ROOT_DIR = SCRIPT_DIR.parent
 
 CLASS_NAMES = ["car", "pedestrian", "truck", "rider"]
 COLORS = [
@@ -13,21 +15,11 @@ COLORS = [
 ]
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png"}
 SUBSET_NAMES = ["train", "val", "test"]
-
-
-def parse_args():
-    parser = argparse.ArgumentParser(description="Render sample YOLO labels on top of exported images.")
-    parser.add_argument("--dataset-dir", type=Path, required=True, help="Path to a split directory inside yolo_dataset/")
-    parser.add_argument("--output-dir", type=Path, default=None, help="Directory for rendered preview images")
-    parser.add_argument("--samples-per-subset", type=int, default=5, help="How many random images to render from each subset")
-    parser.add_argument(
-        "--sequences-per-subset",
-        type=int,
-        default=0,
-        help="How many full video sequences to render from each subset",
-    )
-    parser.add_argument("--seed", type=int, default=42, help="Random seed for sample selection")
-    return parser.parse_args()
+DATASET_DIR = ROOT_DIR / "yolo_dataset" / "split1"
+OUTPUT_DIR = None
+SAMPLES_PER_SUBSET = 5
+SEQUENCES_PER_SUBSET = 0
+RANDOM_SEED = 42
 
 
 def resolve_manifest_entry(manifest_path, raw_entry):
@@ -229,24 +221,23 @@ def render_subset_sequences(dataset_dir, output_dir, subset_name, sequences_per_
 
 
 def main():
-    args = parse_args()
-    if not args.dataset_dir.exists():
-        raise FileNotFoundError(f"Brak katalogu datasetu: {args.dataset_dir}")
+    if not DATASET_DIR.exists():
+        raise FileNotFoundError(f"Brak katalogu datasetu: {DATASET_DIR}")
 
-    output_dir = args.output_dir or (args.dataset_dir / "sanity_check")
+    output_dir = OUTPUT_DIR or (DATASET_DIR / "sanity_check")
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    rng = random.Random(args.seed)
+    rng = random.Random(RANDOM_SEED)
     total_rendered = 0
     for subset_name in SUBSET_NAMES:
-        if args.samples_per_subset > 0:
-            total_rendered += render_subset(args.dataset_dir, output_dir / "samples", subset_name, args.samples_per_subset, rng)
-        if args.sequences_per_subset > 0:
+        if SAMPLES_PER_SUBSET > 0:
+            total_rendered += render_subset(DATASET_DIR, output_dir / "samples", subset_name, SAMPLES_PER_SUBSET, rng)
+        if SEQUENCES_PER_SUBSET > 0:
             total_rendered += render_subset_sequences(
-                args.dataset_dir,
+                DATASET_DIR,
                 output_dir / "sequences",
                 subset_name,
-                args.sequences_per_subset,
+                SEQUENCES_PER_SUBSET,
                 rng,
             )
 

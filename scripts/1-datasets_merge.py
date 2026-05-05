@@ -1,4 +1,3 @@
-import argparse
 from pathlib import Path
 
 import cv2
@@ -14,6 +13,8 @@ KITTI_LABELS_DIR = ROOT_DIR / "original_datasets" / "kitti_dataset" / "data_trac
 KITTI_IMAGES_DIR = ROOT_DIR / "original_datasets" / "kitti_dataset" / "data_tracking_image_2" / "training" / "image_02"
 
 DEFAULT_OUTPUT_DATA_DIR = ROOT_DIR / "dataset"
+OUTPUT_DIR = DEFAULT_OUTPUT_DATA_DIR
+MAX_VIDEOS = None
 
 BDD_FRAME_STRIDE = 6
 
@@ -54,18 +55,6 @@ COMMON_CLASSES = {
     "pedestrian",
     "rider"
 }
-
-
-def parse_args():
-    parser = argparse.ArgumentParser(description="Merge BDD100K MOT and KITTI tracking datasets into one CSV with extracted frames.")
-    parser.add_argument("--max-videos", type=int, default=None, help="Limit the number of processed videos per dataset.")
-    parser.add_argument(
-        "--output-dir",
-        type=Path,
-        default=DEFAULT_OUTPUT_DATA_DIR,
-        help="Output directory where BDD and KITTI frames will be extracted and CSV saved.",
-    )
-    return parser.parse_args()
 
 
 def ensure_required_inputs_exist():
@@ -270,14 +259,12 @@ def process_kitti(labels_dir, images_dir, output_dir, max_videos=None):
 
 
 def main():
-    args = parse_args()
-
     try:
         ensure_required_inputs_exist()
-        args.output_dir.mkdir(parents=True, exist_ok=True)
+        OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-        bdd_df = process_bdd100k(BDD_CSV_PATH, BDD_VIDEOS_DIR, args.output_dir, max_videos=args.max_videos)
-        kitti_df = process_kitti(KITTI_LABELS_DIR, KITTI_IMAGES_DIR, args.output_dir, max_videos=args.max_videos)
+        bdd_df = process_bdd100k(BDD_CSV_PATH, BDD_VIDEOS_DIR, OUTPUT_DIR, max_videos=MAX_VIDEOS)
+        kitti_df = process_kitti(KITTI_LABELS_DIR, KITTI_IMAGES_DIR, OUTPUT_DIR, max_videos=MAX_VIDEOS)
 
         print("\nŁączenie datasetów...")
         merged_df = pd.concat([bdd_df, kitti_df], ignore_index=True)
@@ -294,11 +281,11 @@ def main():
 
         merged_df = merged_df[TARGET_COLUMNS].sort_values(by=["dataset_source", "video_id", "frame_index", "track_id"]).reset_index(drop=True)
 
-        output_csv_path = args.output_dir / "merged_dataset.csv"
+        output_csv_path = OUTPUT_DIR / "merged_dataset.csv"
         output_csv_path.parent.mkdir(parents=True, exist_ok=True)
         merged_df.to_csv(output_csv_path, index=False)
         print(f"\nGotowe!")
-        print(f"Foldery z klatkami: {args.output_dir}")
+        print(f"Foldery z klatkami: {OUTPUT_DIR}")
         print(f"CSV z etykietami: {output_csv_path}")
         print(f"Łącznie rekordów: {len(merged_df)}")
 
