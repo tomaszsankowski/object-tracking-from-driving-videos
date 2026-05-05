@@ -49,7 +49,8 @@ def list_subset_images(manifest_path):
     return sorted(image_paths)
 
 
-def resolve_subset_manifest_path(dataset_dir, subset_name):
+def get_manifest_path(dataset_dir, subset_name):
+    # Eksport w zależności od wersji zapisywał manifest albo w katalogu splitu, albo obok niego.
     split_local_manifest = dataset_dir / f"{subset_name}.txt"
     if split_local_manifest.exists():
         return split_local_manifest
@@ -61,7 +62,7 @@ def resolve_subset_manifest_path(dataset_dir, subset_name):
     return split_local_manifest
 
 
-def group_subset_sequences(dataset_dir, image_paths):
+def group_images_by_sequence(dataset_dir, image_paths):
     dataset_root = dataset_dir.parent
     images_root = (dataset_root / "images").resolve()
     grouped_sequences = {}
@@ -84,7 +85,7 @@ def group_subset_sequences(dataset_dir, image_paths):
     }
 
 
-def build_label_path(dataset_root, image_path):
+def get_label_path(dataset_root, image_path):
     images_root = (dataset_root / "images").resolve()
     try:
         relative_image_path = image_path.resolve().relative_to(images_root)
@@ -105,7 +106,7 @@ def denormalize_box(values, width, height):
     return x1, y1, x2, y2
 
 
-def draw_label_file(image, label_path):
+def draw_labels_from_file(image, label_path):
     height, width = image.shape[:2]
     if not label_path.exists():
         return image
@@ -138,19 +139,19 @@ def draw_label_file(image, label_path):
 
 
 def render_image(dataset_root, image_path, output_path):
-    label_path = build_label_path(dataset_root, image_path)
+    label_path = get_label_path(dataset_root, image_path)
     image = cv2.imread(str(image_path))
     if image is None or label_path is None:
         return False
 
-    rendered_image = draw_label_file(image, label_path)
+    rendered_image = draw_labels_from_file(image, label_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     cv2.imwrite(str(output_path), rendered_image)
     return True
 
 
-def render_subset(dataset_dir, output_dir, subset_name, samples_per_subset, rng):
-    manifest_path = resolve_subset_manifest_path(dataset_dir, subset_name)
+def render_random_samples(dataset_dir, output_dir, subset_name, samples_per_subset, rng):
+    manifest_path = get_manifest_path(dataset_dir, subset_name)
     dataset_root = dataset_dir.parent
     images_root = dataset_root / "images"
     if not manifest_path.exists():
@@ -180,8 +181,8 @@ def render_subset(dataset_dir, output_dir, subset_name, samples_per_subset, rng)
     return rendered_count
 
 
-def render_subset_sequences(dataset_dir, output_dir, subset_name, sequences_per_subset, rng):
-    manifest_path = resolve_subset_manifest_path(dataset_dir, subset_name)
+def render_sequence_samples(dataset_dir, output_dir, subset_name, sequences_per_subset, rng):
+    manifest_path = get_manifest_path(dataset_dir, subset_name)
     dataset_root = dataset_dir.parent
     images_root = (dataset_root / "images").resolve()
     if not manifest_path.exists():
@@ -193,7 +194,7 @@ def render_subset_sequences(dataset_dir, output_dir, subset_name, sequences_per_
         print(f"Pomijam {subset_name}: brak obrazów.")
         return 0
 
-    grouped_sequences = group_subset_sequences(dataset_dir, image_paths)
+    grouped_sequences = group_images_by_sequence(dataset_dir, image_paths)
     if not grouped_sequences:
         print(f"Pomijam {subset_name}: brak pełnych sekwencji do renderu.")
         return 0
@@ -231,9 +232,9 @@ def main():
     total_rendered = 0
     for subset_name in SUBSET_NAMES:
         if SAMPLES_PER_SUBSET > 0:
-            total_rendered += render_subset(DATASET_DIR, output_dir / "samples", subset_name, SAMPLES_PER_SUBSET, rng)
+            total_rendered += render_random_samples(DATASET_DIR, output_dir / "samples", subset_name, SAMPLES_PER_SUBSET, rng)
         if SEQUENCES_PER_SUBSET > 0:
-            total_rendered += render_subset_sequences(
+            total_rendered += render_sequence_samples(
                 DATASET_DIR,
                 output_dir / "sequences",
                 subset_name,

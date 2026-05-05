@@ -86,10 +86,11 @@ EXPERIMENT_PRESETS = {
 
 CONFIG_KEYS = list(BASE_TRAIN_CONFIG.keys())
 PRESET = "split1"
-DATA_PATH = None
+DATA_YAML_PATH = None
 DATASET_ROOT = DEFAULT_DATASET_ROOT
 RUN_NAME = None
 DRY_RUN = False
+# Użyteczne do szybkich lokalnych eksperymentów bez przepisywania presetów.
 TRAIN_CONFIG_OVERRIDES = {}
 
 
@@ -102,7 +103,7 @@ def detect_default_device():
     return "0" if torch.cuda.is_available() else "cpu"
 
 
-def resolve_config():
+def build_train_config():
     if PRESET is not None and PRESET not in EXPERIMENT_PRESETS:
         raise ValueError(f"Nieznany PRESET: {PRESET}")
 
@@ -122,19 +123,19 @@ def resolve_config():
     return config, preset
 
 
-def resolve_data_path(preset):
-    if DATA_PATH is not None:
-        return DATA_PATH.resolve()
+def get_data_yaml_path(preset):
+    if DATA_YAML_PATH is not None:
+        return DATA_YAML_PATH.resolve()
 
     split_name = preset.get("split_name") if preset else None
     if split_name is None:
-        raise ValueError("Ustaw DATA_PATH albo PRESET na górze pliku, żeby wyliczyć data.yaml.")
+        raise ValueError("Ustaw DATA_YAML_PATH albo PRESET na górze pliku, żeby wyliczyć data.yaml.")
 
     data_path = DATASET_ROOT.resolve() / split_name / "data.yaml"
     return data_path
 
 
-def resolve_run_name(data_path, preset):
+def get_run_name(data_path, preset):
     if RUN_NAME:
         return RUN_NAME
     if preset and preset.get("run_name"):
@@ -182,10 +183,10 @@ def train_model(data_path, run_name, config):
 
 
 def main():
-    config, preset = resolve_config()
-    data_path = resolve_data_path(preset)
-    if not data_path.exists():
-        raise FileNotFoundError(f"Brak pliku data.yaml: {data_path}")
+    train_config, preset = build_train_config()
+    data_yaml_path = get_data_yaml_path(preset)
+    if not data_yaml_path.exists():
+        raise FileNotFoundError(f"Brak pliku data.yaml: {data_yaml_path}")
 
     try:
         import ultralytics  # noqa: F401
@@ -194,26 +195,26 @@ def main():
             "Brak pakietu 'ultralytics'. Zainstaluj go w aktywnym .venv przed uruchomieniem treningu."
         ) from error
 
-    config["project"].mkdir(parents=True, exist_ok=True)
-    run_name = resolve_run_name(data_path, preset)
-    summary = {
+    train_config["project"].mkdir(parents=True, exist_ok=True)
+    run_name = get_run_name(data_yaml_path, preset)
+    run_summary = {
         "preset": PRESET,
-        "data_yaml": str(data_path.resolve()),
+        "data_yaml": str(data_yaml_path.resolve()),
         "run_name": run_name,
-        **{key: (str(value) if isinstance(value, Path) else value) for key, value in config.items()},
+        **{key: (str(value) if isinstance(value, Path) else value) for key, value in train_config.items()},
     }
 
     if DRY_RUN:
-        print(json.dumps(summary, ensure_ascii=False, indent=2))
+        print(json.dumps(run_summary, ensure_ascii=False, indent=2))
         return
 
-    elapsed_seconds = train_model(data_path, run_name, config)
+    elapsed_seconds = train_model(data_yaml_path, run_name, train_config)
 
-    run_dir = config["project"] / run_name
+    run_dir = train_config["project"] / run_name
     best_checkpoint = run_dir / "weights" / "best.pt"
     last_checkpoint = run_dir / "weights" / "last.pt"
 
-    summary.update(
+    run_summary.update(
         {
             "run_dir": str(run_dir),
             "best_checkpoint": str(best_checkpoint) if best_checkpoint.exists() else None,
@@ -221,8 +222,8 @@ def main():
             "elapsed_seconds": round(elapsed_seconds, 2),
         }
     )
-    (run_dir / "run_summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
-    print(json.dumps(summary, ensure_ascii=False))
+    (run_dir / "run_summary.json").write_text(json.dumps(run_summary, indent=2), encoding="utf-8")
+    print(json.dumps(run_summary, ensure_ascii=False))
 
 
 if __name__ == "__main__":

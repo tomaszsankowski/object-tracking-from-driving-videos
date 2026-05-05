@@ -14,7 +14,7 @@ RUNS_DIR = DEFAULT_RUNS_DIR
 OUTPUT_DIR = DEFAULT_OUTPUT_DIR
 
 
-def discover_runs(runs_dir):
+def find_completed_runs(runs_dir):
     run_dirs = []
     for child in sorted(runs_dir.iterdir()):
         if not child.is_dir():
@@ -24,7 +24,7 @@ def discover_runs(runs_dir):
     return run_dirs
 
 
-def load_run_record(run_dir):
+def read_run_record(run_dir):
     summary = json.loads((run_dir / "run_summary.json").read_text(encoding="utf-8"))
     results_df = pd.read_csv(run_dir / "results.csv")
     if results_df.empty:
@@ -54,7 +54,7 @@ def load_run_record(run_dir):
     return record, results_df
 
 
-def copy_key_artifacts(run_dir, output_run_dir):
+def copy_run_artifacts(run_dir, output_run_dir):
     output_run_dir.mkdir(parents=True, exist_ok=True)
     for file_name in [
         "results.csv",
@@ -73,7 +73,7 @@ def copy_key_artifacts(run_dir, output_run_dir):
             shutil.copy2(source, output_run_dir / file_name)
 
 
-def plot_comparison(summary_df, output_dir, metric_column, file_name, title):
+def save_comparison_plot(summary_df, output_dir, metric_column, file_name, title):
     if metric_column not in summary_df.columns:
         return
 
@@ -101,12 +101,12 @@ def main():
     report_runs_dir.mkdir(parents=True, exist_ok=True)
 
     records = []
-    for run_dir in discover_runs(RUNS_DIR):
-        record, _ = load_run_record(run_dir)
-        if record is None:
+    for run_dir in find_completed_runs(RUNS_DIR):
+        run_record, _ = read_run_record(run_dir)
+        if run_record is None:
             continue
-        records.append(record)
-        copy_key_artifacts(run_dir, report_runs_dir / run_dir.name)
+        records.append(run_record)
+        copy_run_artifacts(run_dir, report_runs_dir / run_dir.name)
 
     if not records:
         raise SystemExit("Nie znaleziono żadnych zakończonych runów z run_summary.json i results.csv.")
@@ -114,9 +114,9 @@ def main():
     summary_df = pd.DataFrame(records).sort_values(by=["elapsed_seconds", "run_name"], na_position="last")
     summary_df.to_csv(OUTPUT_DIR / "task3_runs_summary.csv", index=False)
 
-    plot_comparison(summary_df, OUTPUT_DIR, "metrics/mAP50(B)", "comparison_map50.png", "Task 3 comparison: mAP50")
-    plot_comparison(summary_df, OUTPUT_DIR, SCORE_COLUMN, "comparison_map50_95.png", "Task 3 comparison: mAP50-95")
-    plot_comparison(summary_df, OUTPUT_DIR, "elapsed_seconds", "comparison_runtime.png", "Task 3 comparison: runtime")
+    save_comparison_plot(summary_df, OUTPUT_DIR, "metrics/mAP50(B)", "comparison_map50.png", "Task 3 comparison: mAP50")
+    save_comparison_plot(summary_df, OUTPUT_DIR, SCORE_COLUMN, "comparison_map50_95.png", "Task 3 comparison: mAP50-95")
+    save_comparison_plot(summary_df, OUTPUT_DIR, "elapsed_seconds", "comparison_runtime.png", "Task 3 comparison: runtime")
 
     print(f"Zebrano {len(summary_df)} runów do {OUTPUT_DIR}")
 
