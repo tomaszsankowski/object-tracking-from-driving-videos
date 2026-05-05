@@ -304,7 +304,6 @@ def main():
 
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     asset_cache = {}
-    # Jeden wspólny katalog assets ogranicza duplikowanie obrazów między wariantami splitów.
     for split_name in SPLIT_NAMES:
         export_split(
             split_name,

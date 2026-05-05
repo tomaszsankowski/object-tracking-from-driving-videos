@@ -90,7 +90,6 @@ DATA_YAML_PATH = None
 DATASET_ROOT = DEFAULT_DATASET_ROOT
 RUN_NAME = None
 DRY_RUN = False
-# Użyteczne do szybkich lokalnych eksperymentów bez przepisywania presetów.
 TRAIN_CONFIG_OVERRIDES = {}
 
 
