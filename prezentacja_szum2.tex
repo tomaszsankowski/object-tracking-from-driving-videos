@@ -1,0 +1,417 @@
+\documentclass{beamer}
+\usepackage[utf8]{inputenc}
+\usepackage{hyperref}
+\usepackage{booktabs}
+\usepackage{graphicx} % Potrzebne do skalowania tabel, np. \resizebox
+
+\usetheme{Madrid} % Zmieniony na Madrid - świetnie wygląda z tabelami
+
+\title[MOT in Driving Videos]{Object Detection and Multi-Object Tracking (MOT) in Driving Videos}
+\author[T. Sankowski et al]{Tomasz Sankowski \and Piotr Sulewski \and Adam Białek}
+\institute[PG WETI]{Politechnika Gdańska Wydział Elektroniki, Telekomunikacji i Informatyki}
+\date{\today}
+
+\begin{document}
+
+% --- Slide 0: Title ---
+\begin{frame}
+    \titlepage
+\end{frame}
+
+% --- Slide 1: Project description ---
+\begin{frame}{Project description}
+    \begin{itemize}
+        \item \textbf{Goal:} Train a model for 2D detection and multi-object tracking (MOT) of cars, pedestrians, bikes, etc., using real dashcam footage.
+        \item \textbf{Approach:} Integrate two independent public datasets into a unified format:
+        \begin{itemize}
+            \item \href{https://www.kaggle.com/datasets/robikscube/driving-video-with-object-tracking?resource=download}{\textbf{BDD100K subset (Kaggle)}}
+            \item \href{https://www.cvlibs.net/datasets/kitti/eval_tracking.php}{\textbf{KITTI Tracking Benchmark}}
+        \end{itemize}
+        \item \textbf{Sample video:} \href{https://miro.medium.com/v2/resize:fit:4800/format:webp/1*XRbbnoZebPlw3kTpKzhvtQ.gif}{link}
+    \end{itemize}
+\end{frame}
+
+% --- Slide 2: Declaration of GenAI usage ---
+\begin{frame}{Declaration of GenAI usage}
+    
+    \vspace{0.5cm}
+    
+    \begin{block}{Statement of Originality}
+        We hereby declare that the conceptual work, text, data processing source code, conclusions, and analyzed results in this project are entirely our own original work. Artificial intelligence tools (specifically Gemini 3 Pro) were used exclusively for assistance with LaTeX syntax and visual formatting of this presentation. No GenAI tools were used to generate the core content, logic, or data analysis of this project.
+    \end{block}
+    
+    \vspace{1.5cm}
+    
+    \begin{center}
+        \begin{tabular}{ccc}
+            \makebox[3.5cm]{\hrulefill} & \makebox[3.5cm]{\hrulefill} & \makebox[3.5cm]{\hrulefill} \\
+            Tomasz Sankowski & Piotr Sulewski & Adam Białek \\
+            Index 193363 & Index 192594 & Index 193677
+        \end{tabular}
+    \end{center}
+    
+\end{frame}
+
+% --- Slide 3: System input and output description ---
+\begin{frame}{System input and output description}
+    \begin{itemize}
+        \item \textbf{System Input:} 
+        \begin{itemize}
+            \item RGB video frames extracted from real-world driving footage (e.g., $1280 \times 720$ resolution).
+        \end{itemize}
+        \vspace{0.3cm}
+        \item \textbf{System Output (per frame):}
+        \begin{itemize}
+            \item A \textbf{list of detected objects}, where each detection contains:
+            \begin{itemize}
+                \item \textbf{Category:} Predicted object class (e.g., \texttt{car}, \texttt{pedestrian}).
+                \item \textbf{Bounding Box:} 2D spatial coordinates $(x_1, y_1, x_2, y_2)$.
+                \item \textbf{Tracking ID (only for MOT):} A persistent, unique identifier assigned to the same object across consecutive video frames within a sequence.
+            \end{itemize}
+        \end{itemize}
+    \end{itemize}
+\end{frame}
+
+% --- Slide 4: Collected datasets - description ---
+\begin{frame}{Collected datasets - description}
+    \textbf{Source 1: BDD100K Subset (Kaggle)}
+    \begin{itemize}
+        \item \textbf{Description:} Large-scale driving dataset with \textbf{1,000 video sequences} covering diverse weather, lighting, and traffic conditions.
+        \item \textbf{Data Format:} Provided as \textbf{raw video files} (.mov) with a single master CSV for all annotations.
+        \item \textbf{Frame Rate:} Videos recorded at 30 FPS, but tracking labels are sampled at \textbf{5 FPS}.
+    \end{itemize}
+    
+    \vspace{0.4cm}
+    
+    \textbf{Source 2: KITTI Tracking Benchmark}
+    \begin{itemize}
+        \item \textbf{Description:} High-quality recordings from a moving vehicle using a stereo-camera setup; used \textbf{21 training sequences} with ground-truth.
+        \item \textbf{Data Format:} Provided as \textbf{individual PNG image sequences} (frames) with separate text files for each sequence.
+        \item \textbf{Frame Rate:} Both images and tracking labels are natively recorded at \textbf{10 FPS}.
+    \end{itemize}
+\end{frame}
+
+% --- Slide 5: Dataset merging - Unified Schema ---
+\begin{frame}{Dataset merging - Unified Data Format}
+    To make both datasets compatible, they were transformed into a single tabular format:
+    \vspace{0.3cm}
+    \begin{table}
+        \centering
+        \resizebox{\textwidth}{!}{
+        \begin{tabular}{lll}
+        \toprule
+        \textbf{Column} & \textbf{Type} & \textbf{Description} \\
+        \midrule
+        \texttt{dataset\_source} & string & Dataset origin: \texttt{BDD100K} or \texttt{KITTI} \\
+        \texttt{video\_id}       & string & Sequence identifier \\
+        \texttt{frame\_index}    & int    & Frame number within the sequence \\
+        \texttt{image\_path}     & string & Path to the corresponding frame image file \\
+        \texttt{track\_id}       & int    & Tracking ID valid within a sequence \\
+        \texttt{global\_track\_id} & string & Globally unique track identifier \\
+        \texttt{category}        & string & Unified object class label \\
+        \texttt{bbox\_x1, y1, x2, y2} & float  & Coordinates of the bounding box \\
+        \texttt{occluded}        & int    & Binary occlusion flag ($0$ or $1$) \\
+        \texttt{truncated}       & int    & Binary truncation flag ($0$ or $1$) \\
+        \bottomrule
+        \end{tabular}}
+    \end{table}
+\end{frame}
+
+% --- Slide 6: Dataset merging - Harmonization & Problems ---
+\begin{frame}{Dataset Mapping - Class Mapping \& Problems}
+    \textbf{Class Harmonization:}
+    Only a conservative subset of common classes was retained. KITTI-specific mappings:
+    \begin{itemize}
+        \item \texttt{Car}, \texttt{Van} $\rightarrow$ \texttt{car}
+        \item \texttt{Truck} $\rightarrow$ \texttt{truck}
+        \item \texttt{Pedestrian}, \texttt{Person\_sitting} $\rightarrow$ \texttt{pedestrian}
+        \item \texttt{Cyclist} $\rightarrow$ \texttt{rider}
+    \end{itemize}
+    \vspace{0.2cm}
+    \textbf{Synchronization Challenges:}
+    \begin{itemize}
+        \item \textbf{ID Collisions:} Resolved by introducing \texttt{global\_track\_id} (\texttt{source\_video\_id\_track}).
+        \item \textbf{Attribute mismatch:} KITTI's ordinal integers and BDD100K's booleans for occlusion/truncation were reduced to a shared binary representation.
+    \end{itemize}
+\end{frame}
+
+% --- Slide 7: Data relations - Overall Statistics ---
+\begin{frame}{Data relations - Overall Statistics}
+    The preprocessing script (\texttt{1-datasets\_merge.py}) successfully removed unnecessary features and skipped unsupported classes (such as \texttt{DontCare}) to ensure a clean and unified dataset.
+    
+    \vspace{0.3cm}
+    \begin{table}
+        \centering
+        \begin{tabular}{lrr}
+        \toprule
+        \textbf{Statistic} & \textbf{BDD100K subset} & \textbf{KITTI} \\
+        \midrule
+        Video sequences   & 1,000  & 21 \\
+        Object annotations & 1,836,956 & 22,614 \\
+        \bottomrule
+        \end{tabular}
+        \caption{Summary statistics after preprocessing.}
+    \end{table}
+    \vspace{0.2cm}
+    \textbf{Observation:} BDD100K heavily dominates the dataset in terms of volume, contributing over 98\% of all bounding boxes.
+\end{frame}
+
+% --- Slide 8: Data relations - Class Distribution ---
+\begin{frame}{Data relations - Class Distribution}
+    The output labels show a strong class imbalance, typical for real-world driving scenarios.
+    
+    \vspace{0.3cm}
+    \begin{table}
+        \centering
+        \footnotesize
+        \begin{tabular}{lrrr}
+        \toprule
+        \textbf{Class} & \textbf{BDD100K subset} & \textbf{KITTI} & \textbf{Total} \\
+        \midrule
+        \texttt{car}        & 1,473,500 & 15,307 & 1,488,807 \\
+        \texttt{pedestrian} & 254,450   & 5,742  & 260,192 \\
+        \texttt{truck}      & 95,969    & 593    & 96,562 \\
+        \texttt{rider}      & 13,037    & 972    & 14,009 \\
+        \bottomrule
+        \end{tabular}
+        \caption{Final class distribution in the merged dataset.}
+    \end{table}
+    \vspace{0.2cm}
+    \textbf{Problem:} \texttt{car} instances are roughly $100\times$ more frequent than \texttt{rider} annotations, which may strongly bias the model toward the majority class.
+    
+    \vspace{0.2cm}
+    \textbf{Decision:} This severe imbalance must be addressed during the training phase to ensure reliable performance on underrepresented classes.
+\end{frame}
+
+% --- Slide 9: Data relations - Similarities \& Correlations ---
+\begin{frame}{Data relations - Similarities \& Correlations}
+    \textbf{1. Highly Similar Data (Temporal Correlation):}
+    \begin{itemize}
+        \item \textbf{Problem:} Dashcam videos recorded at 30 FPS contain nearly identical consecutive frames. Using all of them would cause massive data duplication and potentially model overfitting.
+        \item \textbf{Decision:} Tracking labels are provided only every 0.2 seconds (5 FPS), which filters out redundant data while preserving sufficient motion context.
+    \end{itemize}
+
+    \vspace{0.4cm}
+    \textbf{2. Background Correlations ("Shortcut Learning"):}
+    \begin{itemize}
+        \item \textbf{Problem:} Vehicles almost always appear on grey asphalt, while pedestrians and riders are on sidewalks (affecting $>90\%$ of instances). This poses a risk that the model might memorize background colors instead of learning actual object shapes.
+        \item \textbf{Decision:} Use color augmentation and a challenging validation subset so the network is forced to focus on object geometry instead of background context.
+    \end{itemize}
+\end{frame}
+
+% --- Slide 9: Errors - analysis, problems, examples, decisions ---
+\begin{frame}{Errors - analysis, problems, examples, decisions}
+    \textbf{Noise and Annotation Quality:}
+    \begin{itemize}
+        \item \textbf{Semantic noise:} Mapping KITTI's \texttt{Cyclist} to \texttt{rider} or \texttt{Van} to \texttt{car} introduces minor label approximations.
+        \item \textbf{Precision loss:} KITTI grades occlusion on a 0-3 scale, while BDD100K uses simple binary flags (True/False). Merging them required flattening KITTI's scale to binary, losing some original detail.
+        \item \textbf{High annotation quality:} Visual inspection of these professional datasets revealed zero human errors (e.g., misclassified objects or poorly drawn bounding boxes).
+        \item \textbf{No technical errors:} A verification script confirmed that 100\% of bounding boxes are mathematically valid (no $x_2 \leq x_1$ or $y_2 \leq y_1$).
+    \end{itemize}
+
+    \vspace{0.2cm}
+    \textbf{Decisions:}
+    \begin{itemize}
+        \item Standardize attributes (occlusion/truncation) to a shared binary format.
+        \item Filter out unsupported technical labels like \texttt{DontCare} or \texttt{Misc}.
+    \end{itemize}
+\end{frame}
+
+% --- Slide 10: Problematic data - analysis, decisions ---
+\begin{frame}{Problematic data - analysis, decisions}
+    \textbf{Visually Challenging Data:}
+    \begin{itemize}
+        \item Minority classes (\texttt{pedestrian}, \texttt{rider}) are usually smaller than cars, more frequently occluded, and set in complex urban contexts.
+        \item \textbf{Risk:} Without special treatment, overall accuracy will appear high while performance on safety-critical minority classes remains weak.
+    \end{itemize}
+    \vspace{0.3cm}
+    \textbf{Decisions for Training \& Evaluation:}
+    \begin{itemize}
+        \item Apply \textbf{class weighting} or \textbf{balanced sampling} during optimization.
+        \item Report \textbf{per-class metrics} to expose weaknesses in minority classes.
+    \end{itemize}
+\end{frame}
+
+% --- Slide 11: Data representation - Methods ---
+\begin{frame}{Data representation - Methods}
+    \textbf{Image Data Extraction \& Representation:}
+    \begin{itemize}
+        \item \textbf{KITTI:} Data is already provided as ready-to-use image sequences (.png).
+        \item \textbf{BDD100K:} Raw video files (.mov) must be decoded. To align with the ground-truth tracking labels, frames are extracted exactly every 1/5 of a second (5 FPS).
+        \item \textbf{Model Input:} Extracted frames from both sources will be loaded into memory as \textbf{3D Tensors} (Height $\times$ Width $\times$ 3 RGB channels).
+    \end{itemize}
+
+    \vspace{0.3cm}
+    \textbf{Annotation Representation:}
+    \begin{itemize}
+        \item The current unified dataset stores bounding boxes using absolute pixel coordinates: $(x_1, y_1, x_2, y_2)$.
+        \item \textbf{Potential transformation:} Depending on the selected detection architecture (e.g., YOLO), labels may require conversion to normalized, center-based coordinates: $(class, x_c, y_c, w, h)$ scaled to the $[0.0, 1.0]$ range.
+    \end{itemize}
+\end{frame}
+
+% --- Slide 12: Data normalization - methods and examples ---
+\begin{frame}{Data normalization - methods and examples}
+    \textbf{1. Spatial Normalization (Image Resizing):}
+    \begin{itemize}
+        \item \textbf{Problem:} Neural networks process data in batches and require consistent input dimensions, but our sources vary (BDD100K is $1280 \times 720$, KITTI is e.g., $1242 \times 375$).
+        \item \textbf{Solution:} All extracted video frames and images will be resized to a unified, fixed target resolution (e.g., $640 \times 640$ or $1280 \times 720$).
+    \end{itemize}
+
+    \vspace{0.3cm}
+    \textbf{2. Bounding Box Scaling:}
+    \begin{itemize}
+        \item During image resizing, the corresponding target labels (bounding box coordinates $x_1, y_1, x_2, y_2$) will be proportionally scaled to match the new image dimensions.
+    \end{itemize}
+
+    \vspace{0.3cm}
+    \textbf{3. Pixel Value Normalization:}
+    \begin{itemize}
+        \item \textbf{Problem:} Raw RGB pixel intensities are integers ranging from $0$ to $255$, which can cause instability and slow down model convergence.
+        \item \textbf{Solution:} All pixel values will be divided by $255$ to scale them into a continuous $[0.0, 1.0]$ floating-point range.
+    \end{itemize}
+\end{frame}
+
+% --- Slide 13: Data augmentation - methods and examples ---
+\begin{frame}{Data augmentation - methods and examples}
+    \textbf{Goal:} Artificially expand the dataset to prevent overfitting and simulate real-world dashcam variability. (script \texttt{2-data\_augumentation.py})
+    
+    \vspace{0.3cm}
+    \textbf{Applied Transformations (via Albumentations):}
+    \begin{itemize}
+        \item \textbf{Affine Shear:} Distorts the image along the X and Y axes ($-30^\circ$ to $30^\circ$).
+        \begin{itemize}
+            \item \textit{Purpose:} Simulates varying camera mounting angles and perspective shifts.
+        \end{itemize}
+        \item \textbf{Brightness \& Contrast:} Randomly adjusts lighting levels.
+        \begin{itemize}
+            \item \textit{Purpose:} Simulates different times of day, weather conditions, and sun glare.
+        \end{itemize}
+        \item \textbf{Hue, Saturation, Value (HSV) Shift:} Randomly alters color spaces.
+        \begin{itemize}
+            \item \textit{Purpose:} Replicates the color profiles of different dashcam sensors and lens filters.
+        \end{itemize}
+    \end{itemize}
+\end{frame}
+
+% --- Slide 14: Data augmentation - MOT specific challenge ---
+\begin{frame}{Data augmentation - MOT specific challenge}
+    \textbf{The Temporal Coherence Problem:}
+    \begin{itemize}
+        \item Applying random augmentations frame-by-frame creates artificial flickering and jumping (e.g., brightness changing every 1/5th of a second).
+        \item This destroys the temporal continuity required for Multi-Object Tracking algorithms.
+    \end{itemize}
+
+    \vspace{0.3cm}
+    \textbf{The Solution: Sequence-level Augmentation}
+    \begin{itemize}
+        \item \textbf{Mechanism:} Random augmentation parameters (e.g., a specific shear angle and brightness level) are generated only once for the entire video.
+        \item These locked parameters are then applied uniformly across all consecutive frames of that specific sequence.
+        \item \textbf{Result:} Bounding boxes are properly adjusted, visual variability is artificially increased, and physical continuity remains completely intact.
+    \end{itemize}
+\end{frame}
+
+\begin{frame}{Example frame - raw image}
+    \centering
+    \includegraphics[width=\textwidth,height=0.78\textheight,keepaspectratio]{raw.png}
+
+    \vspace{0.2cm}
+    {\small Original video frame before any annotation overlay or augmentation.}
+\end{frame}
+
+\begin{frame}{Example frame - labeled image}
+    \centering
+    \includegraphics[width=\textwidth,height=0.78\textheight,keepaspectratio]{labeled.png}
+
+    \vspace{0.2cm}
+    {\small The same frame with tracking IDs, categories, and 2D bounding boxes.}
+\end{frame}
+
+\begin{frame}{Example frame - labeled image after augmentation}
+    \centering
+    \includegraphics[width=\textwidth,height=0.78\textheight,keepaspectratio]{augmented_label.png}
+
+    \vspace{0.2cm}
+    {\small Sequence-level augmentation preserves annotations while changing the image geometry.}
+\end{frame}
+
+% --- Slide 15: Data splits - Methodology & Challenges ---
+\begin{frame}{Data splits - Methodology \& Challenges}
+    \textbf{Challenges in MOT Splitting:}
+    \begin{itemize}
+        \item \textbf{Data Leakage:} Frames from the same video cannot be mixed across sets. Splitting must occur exclusively at the \texttt{video\_id} level.
+        \item \textbf{Multi-label Imbalance:} A single video contains multiple classes. Randomly splitting videos leads to mismatched class distributions.
+    \end{itemize}
+
+    \vspace{0.3cm}
+    \textbf{Solution: Stratification by Rarest Class}
+    \begin{itemize}
+        \item Each video is tagged with the \textit{rarest} class it contains (e.g., if a video contains mostly \texttt{car} but one \texttt{rider}, it is tagged as \texttt{rider}).
+        \item We perform a stratified split (\texttt{train\_test\_split}) based on these video-level tags.
+        \item \textbf{Result:} Both majority and minority classes are proportionately distributed across Train (70\%), Val (15\%), and Test (15\%) sets.
+    \end{itemize}
+\end{frame}
+
+% --- Slide 16: Data splits - Detailed Statistics ---
+\begin{frame}{Data splits - Detailed Statistics}
+    \centering
+    \textbf{Total Instance Count per Split}
+    \vspace{0.4cm}
+    
+    \begin{table}
+        \centering
+        \begin{tabular}{lrrr}
+        \toprule
+        \textbf{Set} & \textbf{SPLIT 1} & \textbf{SPLIT 2} & \textbf{SPLIT 3} \\
+        \midrule
+        \textbf{TRAIN} & 1,302,894 & 1,302,894 & 1,302,894 \\
+        \textbf{VAL}   & 274,852   & 274,852   & 256,530 \\
+        \textbf{TEST}  & 281,824   & 281,824   & 281,824 \\
+        \midrule
+        \textbf{Total (Sum)} & 1,859,570 & 1,859,570 & 1,841,248 \\
+        \bottomrule
+        \end{tabular}
+        \vspace{0.2cm}
+        \caption{Comparison of sample counts across generated splits.}
+    \end{table}
+
+    \vspace{0.2cm}
+    \begin{itemize}
+        \item \textbf{Augmentation:} Split 1 and Split 2 base counts are identical because augmentations are performed \textbf{online} during training. Final Split 2 size will be larger.
+    \end{itemize}
+\end{frame}
+
+% --- Slide 17: Data splits - Split 1 ---
+\begin{frame}{SPLIT 1: Original Data (Random Split)}
+    \begin{center}
+        \includegraphics[width=0.85\textwidth]{split1_stats.png}
+    \end{center}
+    \vspace{0.1cm}
+    \begin{itemize}
+        \item \textbf{Method:} Standard random split by \texttt{video\_id}.
+    \end{itemize}
+\end{frame}
+
+% --- Slide 18: Data splits - Split 2 ---
+\begin{frame}{SPLIT 2: Stratified \& Ready for Online Augmentation}
+    \begin{center}
+        \includegraphics[width=0.85\textwidth]{split2_stats.png}
+    \end{center}
+    \vspace{0.1cm}
+    \begin{itemize}
+        \item \textbf{Method:} Split using the our custom algorithm algorithm.
+    \end{itemize}
+\end{frame}
+
+% --- Slide 19: Data splits - Split 3 ---
+\begin{frame}{SPLIT 3: Internal Validation (Data Leakage Demo)}
+    \begin{center}
+        \includegraphics[width=0.85\textwidth]{split3_stats.png}
+    \end{center}
+    \vspace{0.1cm}
+    \begin{itemize}
+        \item \textbf{Method:} Original VAL set is discarded. New VAL is a 20\% subset drawn directly from TRAIN.
+    \end{itemize}
+\end{frame}
+
+\end{document}
+
